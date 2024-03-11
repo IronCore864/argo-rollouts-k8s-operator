@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 # Copyright 2024 Tiexin
 # See LICENSE file for licensing details.
-
+import asyncio
 import logging
 from pathlib import Path
 import platform
-import shlex
 
 from lightkube import Client
 from lightkube.resources.core_v1 import ConfigMap, Secret, Service, ServiceAccount
@@ -30,39 +29,24 @@ APP_NAME = METADATA["name"]
 
 @pytest.mark.abort_on_fail
 async def test_build_and_deploy(ops_test: OpsTest):
-    """Build the charm-under-test and deploy it together with related charms.
-
-    Assert on the unit status before any relations/configurations take place.
-    """
-    # detect CPU architecture
-    arch = "arm64" if platform.machine() in ("aarch64", "arm64") else "amd64"
-
-    # build and deploy charm from local source folder
-    logger.info("Building charm...")
     charm = await ops_test.build_charm(".")
-
-    bundles = [Path("tests/data/charm.yaml")]
-    context = {
-        "arch": arch,
-        "charm": charm.resolve(),
-        "model_name": ops_test.model_name,
-        "resources": {
-            "argo-rollouts-image": METADATA["resources"]["argo-rollouts-image"]["upstream-source"],
-        },
+    resources = {
+        "argo-rollouts-image": METADATA["resources"]["argo-rollouts-image"]["upstream-source"],
     }
-    (bundle,) = await ops_test.async_render_bundles(*bundles, **context)
+    constraints = {"arch": "arm64" if platform.machine() in ("aarch64", "arm64") else "amd64"}
 
-    logger.info("Deploy Charm...")
-    model = ops_test.model_full_name
-    cmd = f"juju deploy -m {model} {bundle} --trust"
-    rc, stdout, stderr = await ops_test.run(*shlex.split(cmd))
-    assert rc == 0, f"Bundle deploy failed: {(stderr or stdout).strip()}"
-    logger.info(stdout)
-
-    # issuing dummy update_status just to trigger an event
-    async with ops_test.fast_forward():
-        await ops_test.model.wait_for_idle(apps=["argo-rollouts"], status="active", timeout=60 * 5)
-        assert ops_test.model.applications["argo-rollouts"].units[0].workload_status == "active"
+    await asyncio.gather(
+        ops_test.model.deploy(
+            charm,
+            application_name=APP_NAME,
+            resources=resources,
+            constraints=constraints,
+        ),
+        ops_test.model.wait_for_idle(
+            apps=[APP_NAME], status="active", raise_on_blocked=True, timeout=60 * 5
+        ),
+    )
+    assert ops_test.model.applications[APP_NAME].units[0].workload_status == "active"
 
 
 @pytest.mark.abort_on_fail
