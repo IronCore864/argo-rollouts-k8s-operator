@@ -7,11 +7,12 @@
 Upstream doc: https://argoproj.github.io/argo-rollouts/
 """
 
+from glob import glob
 import logging
 import re
 import requests
+import time
 
-from glob import glob
 from lightkube import Client, codecs
 from lightkube.core.exceptions import ApiError
 import ops
@@ -23,6 +24,9 @@ from charms.prometheus_k8s.v0.prometheus_scrape import MetricsEndpointProvider
 logger = logging.getLogger(__name__)
 
 METRICS_PORT = 8090
+MAX_PEBBLE_RETRIES = 3
+PEBBLE_RETRY_DELAY = 3
+
 
 class ArgoRolloutsCharm(ops.CharmBase):
     """Charmed Operator for Argo Rollouts."""
@@ -34,9 +38,7 @@ class ArgoRolloutsCharm(ops.CharmBase):
         self.container = self.unit.get_container("argo-rollouts")
         self._context = {"namespace": self._namespace, "app_name": self.app.name}
 
-        framework.observe(
-            self.on.argo_rollouts_pebble_ready, self._argo_rollouts_pebble_ready
-        )
+        framework.observe(self.on.argo_rollouts_pebble_ready, self._argo_rollouts_pebble_ready)
         framework.observe(self.on.install, self._on_install_or_upgrade)
         framework.observe(self.on.upgrade_charm, self._on_install_or_upgrade)
         framework.observe(self.on.remove, self._on_remove)
@@ -88,30 +90,34 @@ class ArgoRolloutsCharm(ops.CharmBase):
             self._evaluate_argo_rollouts_status()
 
     def _configure_argo_rollouts_pebble_layer(self) -> bool:
-        if not self.container.can_connect():
-            return False
+        for attempt in range(MAX_PEBBLE_RETRIES):
+            try:
+                services = self.container.get_plan().to_dict().get("services", {})
+                new_layer = self._pebble_layer.to_dict()
+                if services != new_layer["services"]:
+                    self.container.add_layer("argo-rollouts", self._pebble_layer, combine=True)
+                    logger.info("Added updated layer 'argo_rollouts' to Pebble plan")
+                    self.container.replan()
+                    logger.info(f"Restarted '{self.pebble_service_name}' service")
 
-        new_layer = self._pebble_layer.to_dict()
-        services = self.container.get_plan().to_dict().get("services", {})
-        if services != new_layer["services"]:
-            self.container.add_layer("argo-rollouts", self._pebble_layer, combine=True)
-            logger.info("Added updated layer 'argo_rollouts' to Pebble plan")
-            self.container.replan()
-            logger.info(f"Restarted '{self.pebble_service_name}' service")
-
-        self.unit.set_workload_version(self.version)
-        self._handle_ports()
-        return True
+                self.unit.set_workload_version(self.version)
+                self._handle_ports()
+                return True
+            except ops.pebble.ConnectionError:
+                if attempt >= MAX_PEBBLE_RETRIES - 1:
+                    return False
+                time.sleep(PEBBLE_RETRY_DELAY * attempt)
+        return False
 
     def _evaluate_argo_rollouts_status(self):
-        container = self.unit.get_container("argo-rollouts")
-        service = container.can_connect() and container.get_services().get(
-            self.pebble_service_name
-        )
-        if service and service.is_running():
-            self.unit.status = ops.ActiveStatus()
-        else:
-            self.unit.status = ops.WaitingStatus("Waiting for Argo Rollouts service")
+        try:
+            service = self.container.get_services().get(self.pebble_service_name)
+            if service and service.is_running():
+                self.unit.status = ops.ActiveStatus()
+            else:
+                self.unit.status = ops.WaitingStatus("Waiting for Argo Rollouts service")
+        except ops.pebble.ConnectionError:
+            self.unit.status = ops.WaitingStatus("Waiting for Pebble in workload container")
 
     @property
     def _pebble_layer(self) -> ops.pebble.LayerDict:
@@ -164,13 +170,15 @@ class ArgoRolloutsCharm(ops.CharmBase):
     @property
     def version(self) -> str:
         """Argo Rollouts controller's version."""
-        if self.container.can_connect() and self.container.get_services(self.pebble_service_name):
-            try:
-                version = self._request_version()
-                logger.info(f"application version: {version}")
-                return version
-            except Exception as e:
-                logger.warning("unable to get version from API: ", exc_info=True)
+        try:
+            self.container.get_services(self.pebble_service_name)
+            version = self._request_version()
+            logger.info(f"application version: {version}")
+            return version
+        except ops.pebble.ConnectionError:
+            logger.warning("pebble not ready")
+        except Exception as e:
+            logger.warning("unable to get version from API: ", exc_info=True)
         return ""
 
     def _request_version(self) -> str:
