@@ -38,9 +38,9 @@ class ArgoRolloutsCharm(ops.CharmBase):
         self.container = self.unit.get_container("argo-rollouts")
         self._context = {"namespace": self._namespace, "app_name": self.app.name}
 
-        framework.observe(self.on.argo_rollouts_pebble_ready, self._argo_rollouts_pebble_ready)
-        framework.observe(self.on.install, self._on_install_or_upgrade)
-        framework.observe(self.on.upgrade_charm, self._on_install_or_upgrade)
+        framework.observe(self.on.argo_rollouts_pebble_ready, self._install_and_restarty)
+        framework.observe(self.on.install, self._install_and_restarty)
+        framework.observe(self.on.upgrade_charm, self._install_and_restarty)
         framework.observe(self.on.remove, self._on_remove)
 
         self._prometheus_scraping = MetricsEndpointProvider(
@@ -61,14 +61,6 @@ class ArgoRolloutsCharm(ops.CharmBase):
         with open("/var/run/secrets/kubernetes.io/serviceaccount/namespace", "r") as f:
             return f.read().strip()
 
-    def _on_install_or_upgrade(self, event) -> None:
-        self.unit.status = ops.MaintenanceStatus("creating kubernetes resources")
-        try:
-            self._create_kubernetes_resources()
-        except ApiError:
-            logger.exception("kubernetes API error, resource creation failed")
-            self.unit.status = ops.BlockedStatus("kubernetes resource creation failed")
-
     def _create_kubernetes_resources(self) -> bool:
         client = Client(field_manager="argo-rollouts-operator-manager")
         for manifest in glob("src/templates/*.yaml.j2"):
@@ -81,13 +73,20 @@ class ArgoRolloutsCharm(ops.CharmBase):
                         raise
         return True
 
-    def _argo_rollouts_pebble_ready(self, event: ops.PebbleReadyEvent) -> None:
-        self.unit.status = ops.MaintenanceStatus("Assembling pod spec")
+    def _install_and_restarty(self, event: ops.PebbleReadyEvent) -> None:
+        self.unit.status = ops.MaintenanceStatus("creating kubernetes resources")
+        try:
+            self._create_kubernetes_resources()
 
-        if not self._configure_argo_rollouts_pebble_layer():
-            self.unit.status = ops.WaitingStatus("Waiting for Pebble in workload container")
-        else:
-            self._evaluate_argo_rollouts_status()
+            if not self._configure_argo_rollouts_pebble_layer():
+                self.unit.status = ops.WaitingStatus("Waiting for Pebble in workload container")
+                event.defer()
+                return
+
+            self.unit.status = self._argo_rollouts_status()
+        except ApiError:
+            logger.exception("kubernetes API error, resource creation failed")
+            self.unit.status = ops.BlockedStatus("kubernetes resource creation failed")
 
     def _configure_argo_rollouts_pebble_layer(self) -> bool:
         for attempt in range(MAX_PEBBLE_RETRIES):
@@ -109,15 +108,16 @@ class ArgoRolloutsCharm(ops.CharmBase):
                 time.sleep(PEBBLE_RETRY_DELAY * attempt)
         return False
 
-    def _evaluate_argo_rollouts_status(self):
+    def _argo_rollouts_status(self) -> ops.StatusBase:
         try:
             service = self.container.get_services().get(self.pebble_service_name)
-            if service and service.is_running():
-                self.unit.status = ops.ActiveStatus()
-            else:
-                self.unit.status = ops.WaitingStatus("Waiting for Argo Rollouts service")
+            return (
+                ops.ActiveStatus()
+                if service and service.is_running()
+                else ops.WaitingStatus("Waiting for Argo Rollouts service")
+            )
         except ops.pebble.ConnectionError:
-            self.unit.status = ops.WaitingStatus("Waiting for Pebble in workload container")
+            return ops.WaitingStatus("Waiting for Pebble in workload container")
 
     @property
     def _pebble_layer(self) -> ops.pebble.LayerDict:
@@ -146,7 +146,6 @@ class ArgoRolloutsCharm(ops.CharmBase):
             self._delete_kubernetes_resources()
         except ApiError:
             logger.exception("kubernetes API error, resource deletion failed")
-            self.unit.status = ops.BlockedStatus("kubernetes resource deletion failed")
 
     def _delete_kubernetes_resources(self) -> bool:
         client = Client()

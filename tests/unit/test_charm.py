@@ -90,9 +90,6 @@ class TestCharm(unittest.TestCase):
         with self.assertLogs("charm") as logs:
             self.harness.charm.on.remove.emit()
             self.assertTrue(len(logs) > 0)
-        self.assertEqual(
-            self.harness.charm.unit.status, BlockedStatus("kubernetes resource deletion failed")
-        )
 
     @patch("charm.Client.apply")
     def test_create_kubernetes_resources_success(self, apply: MagicMock):
@@ -163,11 +160,6 @@ class TestCharm(unittest.TestCase):
             except ApiError:
                 self.assertIn("failed to delete resource:", ";".join(logs.output))
 
-    def test_evaluate_argo_rollouts_status_no_service(self):
-        self.harness.charm.unit.status = BlockedStatus()
-        self.harness.charm._evaluate_argo_rollouts_status()
-        assert self.harness.charm.unit.status == WaitingStatus("Waiting for Argo Rollouts service")
-
     def _argo_rollouts_service(self, *, started=False) -> None:
         container = self.harness.charm.unit.get_container("argo-rollouts")
         layer = {"services": {"argo-rollouts": {}}}
@@ -175,11 +167,16 @@ class TestCharm(unittest.TestCase):
         if started:
             container.start("argo-rollouts")
 
-    def test_evaluate_argo_rollouts_status(self):
+    def test_argo_rollouts_status(self):
         self._argo_rollouts_service(started=True)
         self.harness.charm.unit.status = WaitingStatus()
-        self.harness.charm._evaluate_argo_rollouts_status()
-        assert self.harness.charm.unit.status == ActiveStatus()
+        assert self.harness.charm._argo_rollouts_status() == ActiveStatus()
+
+    def test_argo_rollouts_status_no_service(self):
+        self.harness.charm.unit.status = BlockedStatus()
+        assert self.harness.charm._argo_rollouts_status() == WaitingStatus(
+            "Waiting for Argo Rollouts service"
+        )
 
 
 class TestCharmNamespaceProperty(unittest.TestCase):
