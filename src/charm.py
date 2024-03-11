@@ -10,7 +10,6 @@ Upstream doc: https://argoproj.github.io/argo-rollouts/
 import logging
 import re
 import requests
-import traceback
 
 from glob import glob
 from lightkube import Client, codecs
@@ -64,7 +63,7 @@ class ArgoRolloutsCharm(ops.CharmBase):
         try:
             self._create_kubernetes_resources()
         except ApiError:
-            logger.error(traceback.format_exc())
+            logger.exception("kubernetes API error, resource creation failed")
             self.unit.status = ops.BlockedStatus("kubernetes resource creation failed")
 
     def _create_kubernetes_resources(self) -> bool:
@@ -110,6 +109,8 @@ class ArgoRolloutsCharm(ops.CharmBase):
         )
         if service and service.is_running():
             self.unit.status = ops.ActiveStatus()
+        else:
+            self.unit.status = ops.WaitingStatus("Waiting for Argo Rollouts service")
 
     @property
     def _pebble_layer(self) -> ops.pebble.LayerDict:
@@ -137,7 +138,7 @@ class ArgoRolloutsCharm(ops.CharmBase):
         try:
             self._delete_kubernetes_resources()
         except ApiError:
-            logger.error(traceback.format_exc())
+            logger.exception("kubernetes API error, resource deletion failed")
             self.unit.status = ops.BlockedStatus("kubernetes resource deletion failed")
 
     def _delete_kubernetes_resources(self) -> bool:
@@ -155,7 +156,7 @@ class ArgoRolloutsCharm(ops.CharmBase):
                                 namespace=resource.metadata.namespace,
                             )
                     except ApiError:
-                        logger.debug("failed to delete resource: %s.", str(resource.to_dict()))
+                        logger.debug("failed to delete resource: %s.", resource.to_dict())
                         raise
         return True
 
@@ -165,11 +166,10 @@ class ArgoRolloutsCharm(ops.CharmBase):
         if self.container.can_connect() and self.container.get_services(self.pebble_service_name):
             try:
                 version = self._request_version()
-                logger.info(f"applicaiton version: {version}")
+                logger.info(f"application version: {version}")
                 return version
             except Exception as e:
-                logger.warning("unable to get version from API: %s", str(e))
-                logger.exception(e)
+                logger.warning("unable to get version from API: ", exc_info=True)
         return ""
 
     def _request_version(self) -> str:

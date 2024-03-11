@@ -17,7 +17,7 @@ from charm import ArgoRolloutsCharm
 
 
 class _FakeResponse:
-    """Fake an httpx response during testing only."""
+    """Fake an httpx response (since lightkube uses httpx) during testing only."""
 
     def __init__(self, code):
         self.code = code
@@ -164,9 +164,9 @@ class TestCharm(unittest.TestCase):
                 self.assertIn("failed to delete resource:", ";".join(logs.output))
 
     def test_evaluate_argo_rollouts_status_no_service(self):
-        self.harness.charm.unit.status = WaitingStatus()
+        self.harness.charm.unit.status = BlockedStatus()
         self.harness.charm._evaluate_argo_rollouts_status()
-        assert self.harness.charm.unit.status == WaitingStatus()
+        assert self.harness.charm.unit.status == WaitingStatus("Waiting for Argo Rollouts service")
 
     def _argo_rollouts_service(self, *, started=False) -> None:
         container = self.harness.charm.unit.get_container("argo-rollouts")
@@ -183,10 +183,13 @@ class TestCharm(unittest.TestCase):
 
 
 class TestCharmNamespaceProperty(unittest.TestCase):
+    def tearDown(self):
+        harness = ops.testing.Harness(ArgoRolloutsCharm)
+        harness.cleanup()
+
     @patch("builtins.open", new_callable=mock_open, read_data="test")
     def test_property_namespace(self, mock):
         harness = ops.testing.Harness(ArgoRolloutsCharm)
         harness.begin()
         self.assertEqual(harness.charm._namespace, "test")
         mock.assert_called_with("/var/run/secrets/kubernetes.io/serviceaccount/namespace", "r")
-        harness.cleanup()
