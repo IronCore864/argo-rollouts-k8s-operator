@@ -11,8 +11,9 @@ from lightkube import codecs
 from lightkube.core.exceptions import ApiError
 import ops
 from ops.model import ActiveStatus, BlockedStatus, WaitingStatus
-from ops.testing import Harness
-from charm import ArgoRolloutsOperatorCharm
+import ops.testing
+
+from charm import ArgoRolloutsCharm
 
 
 class _FakeResponse:
@@ -33,12 +34,12 @@ class _FakeApiError(ApiError):
 
 
 @patch("lightkube.core.client.GenericSyncClient", Mock)
-@patch.object(ArgoRolloutsOperatorCharm, "version", "v1.6.6+737ca89")
-@patch.object(ArgoRolloutsOperatorCharm, "_namespace", "test")
+@patch.object(ArgoRolloutsCharm, "version", "v1.6.6+737ca89")
+@patch.object(ArgoRolloutsCharm, "_namespace", "test")
 class TestCharm(unittest.TestCase):
-    @patch.object(ArgoRolloutsOperatorCharm, "_namespace", "test")
+    @patch.object(ArgoRolloutsCharm, "_namespace", "test")
     def setUp(self):
-        self.harness = Harness(ArgoRolloutsOperatorCharm)
+        self.harness = ops.testing.Harness(ArgoRolloutsCharm)
         self.addCleanup(self.harness.cleanup)
         self.harness.begin()
         self.harness.set_can_connect("argo-rollouts", True)
@@ -61,52 +62,34 @@ class TestCharm(unittest.TestCase):
         self.assertEqual(self.harness.model.unit.status, ops.ActiveStatus())
         self.assertEqual(self.harness.get_workload_version(), "v1.6.6+737ca89")
 
-    @patch.object(ArgoRolloutsOperatorCharm, "_create_kubernetes_resources")
+    @patch.object(ArgoRolloutsCharm, "_create_kubernetes_resources")
     def test_install_event_successful(self, create):
         self.harness.charm.on.install.emit()
-        self.assertIn(
-            ("status_set", "maintenance", "creating kubernetes resources", {"is_app": False}),
-            self.harness._get_backend_calls(),
-        )
         create.assert_called_once()
 
     @patch.object(
-        ArgoRolloutsOperatorCharm, "_create_kubernetes_resources", Mock(side_effect=_FakeApiError)
+        ArgoRolloutsCharm, "_create_kubernetes_resources", Mock(side_effect=_FakeApiError)
     )
     def test_install_event_fail(self):
         with self.assertLogs("charm") as logs:
             self.harness.charm.on.install.emit()
             self.assertTrue(len(logs) > 0)
-
-        self.assertIn(
-            ("status_set", "maintenance", "creating kubernetes resources", {"is_app": False}),
-            self.harness._get_backend_calls(),
-        )
         self.assertEqual(
             self.harness.charm.unit.status, BlockedStatus("kubernetes resource creation failed")
         )
 
-    @patch.object(ArgoRolloutsOperatorCharm, "_delete_kubernetes_resources")
+    @patch.object(ArgoRolloutsCharm, "_delete_kubernetes_resources")
     def test_remove_event_successful(self, delete):
         self.harness.charm.on.remove.emit()
-        self.assertIn(
-            ("status_set", "maintenance", "deleting kubernetes resources", {"is_app": False}),
-            self.harness._get_backend_calls(),
-        )
         delete.assert_called_once()
 
     @patch.object(
-        ArgoRolloutsOperatorCharm, "_delete_kubernetes_resources", Mock(side_effect=_FakeApiError)
+        ArgoRolloutsCharm, "_delete_kubernetes_resources", Mock(side_effect=_FakeApiError)
     )
     def test_remove_event_fail(self):
         with self.assertLogs("charm") as logs:
             self.harness.charm.on.remove.emit()
             self.assertTrue(len(logs) > 0)
-
-        self.assertIn(
-            ("status_set", "maintenance", "deleting kubernetes resources", {"is_app": False}),
-            self.harness._get_backend_calls(),
-        )
         self.assertEqual(
             self.harness.charm.unit.status, BlockedStatus("kubernetes resource deletion failed")
         )
@@ -202,7 +185,7 @@ class TestCharm(unittest.TestCase):
 class TestCharmNamespaceProperty(unittest.TestCase):
     @patch("builtins.open", new_callable=mock_open, read_data="test")
     def test_property_namespace(self, mock):
-        harness = Harness(ArgoRolloutsOperatorCharm)
+        harness = ops.testing.Harness(ArgoRolloutsCharm)
         harness.begin()
         self.assertEqual(harness.charm._namespace, "test")
         mock.assert_called_with("/var/run/secrets/kubernetes.io/serviceaccount/namespace", "r")

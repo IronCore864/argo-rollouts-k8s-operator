@@ -12,38 +12,34 @@ import re
 import requests
 import traceback
 
+from glob import glob
+from lightkube import Client, codecs
+from lightkube.core.exceptions import ApiError
+import ops
+
 from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
 from charms.loki_k8s.v0.loki_push_api import LogProxyConsumer
 from charms.prometheus_k8s.v0.prometheus_scrape import MetricsEndpointProvider
 
-from glob import glob
-from lightkube import Client, codecs
-from lightkube.core.exceptions import ApiError
-from ops.charm import CharmBase, PebbleReadyEvent
-from ops.main import main
-from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus, WaitingStatus
-from ops.pebble import LayerDict, Layer
-
-
 logger = logging.getLogger(__name__)
 
 
-class ArgoRolloutsOperatorCharm(CharmBase):
+class ArgoRolloutsCharm(ops.CharmBase):
     """Charmed Operator for Argo Rollouts."""
 
-    def __init__(self, *args):
-        super().__init__(*args)
+    def __init__(self, framework):
+        super().__init__(framework)
 
         self.pebble_service_name = "argo-rollouts"
         self.container = self.unit.get_container("argo-rollouts")
         self._context = {"namespace": self._namespace, "app_name": self.app.name}
 
-        self.framework.observe(
+        framework.observe(
             self.on.argo_rollouts_pebble_ready, self._argo_rollouts_pebble_ready
         )
-        self.framework.observe(self.on.install, self._on_install_or_upgrade)
-        self.framework.observe(self.on.upgrade_charm, self._on_install_or_upgrade)
-        self.framework.observe(self.on.remove, self._on_remove)
+        framework.observe(self.on.install, self._on_install_or_upgrade)
+        framework.observe(self.on.upgrade_charm, self._on_install_or_upgrade)
+        framework.observe(self.on.remove, self._on_remove)
 
         self._prometheus_scraping = MetricsEndpointProvider(
             self,
@@ -64,12 +60,12 @@ class ArgoRolloutsOperatorCharm(CharmBase):
             return f.read().strip()
 
     def _on_install_or_upgrade(self, event) -> None:
-        self.unit.status = MaintenanceStatus("creating kubernetes resources")
+        self.unit.status = ops.MaintenanceStatus("creating kubernetes resources")
         try:
             self._create_kubernetes_resources()
         except ApiError:
             logger.error(traceback.format_exc())
-            self.unit.status = BlockedStatus("kubernetes resource creation failed")
+            self.unit.status = ops.BlockedStatus("kubernetes resource creation failed")
 
     def _create_kubernetes_resources(self) -> bool:
         client = Client(field_manager="argo-rollouts-operator-manager")
@@ -83,11 +79,11 @@ class ArgoRolloutsOperatorCharm(CharmBase):
                         raise
         return True
 
-    def _argo_rollouts_pebble_ready(self, event: PebbleReadyEvent) -> None:
-        self.unit.status = MaintenanceStatus("Assembling pod spec")
+    def _argo_rollouts_pebble_ready(self, event: ops.PebbleReadyEvent) -> None:
+        self.unit.status = ops.MaintenanceStatus("Assembling pod spec")
 
         if not self._configure_argo_rollouts_pebble_layer():
-            self.unit.status = WaitingStatus("Waiting for Pebble in workload container")
+            self.unit.status = ops.WaitingStatus("Waiting for Pebble in workload container")
         else:
             self._evaluate_argo_rollouts_status()
 
@@ -100,7 +96,7 @@ class ArgoRolloutsOperatorCharm(CharmBase):
         if services != new_layer["services"]:
             self.container.add_layer("argo-rollouts", self._pebble_layer, combine=True)
             logger.info("Added updated layer 'argo_rollouts' to Pebble plan")
-            self.container.restart(self.pebble_service_name)
+            self.container.replan()
             logger.info(f"Restarted '{self.pebble_service_name}' service")
 
         self.unit.set_workload_version(self.version)
@@ -113,10 +109,10 @@ class ArgoRolloutsOperatorCharm(CharmBase):
             self.pebble_service_name
         )
         if service and service.is_running():
-            self.unit.status = ActiveStatus()
+            self.unit.status = ops.ActiveStatus()
 
     @property
-    def _pebble_layer(self) -> LayerDict:
+    def _pebble_layer(self) -> ops.pebble.LayerDict:
         # https://github.com/argoproj/argo-rollouts/blob/master/Dockerfile#L98C1-L98C42
         # ENTRYPOINT [ "/bin/rollouts-controller" ]
         cmd = "/bin/rollouts-controller"
@@ -134,15 +130,15 @@ class ArgoRolloutsOperatorCharm(CharmBase):
             },
         }
 
-        return Layer(pebble_layer)
+        return ops.pebble.Layer(pebble_layer)
 
     def _on_remove(self, event):
-        self.unit.status = MaintenanceStatus("deleting kubernetes resources")
+        self.unit.status = ops.MaintenanceStatus("deleting kubernetes resources")
         try:
             self._delete_kubernetes_resources()
         except ApiError:
             logger.error(traceback.format_exc())
-            self.unit.status = BlockedStatus("kubernetes resource deletion failed")
+            self.unit.status = ops.BlockedStatus("kubernetes resource deletion failed")
 
     def _delete_kubernetes_resources(self) -> bool:
         client = Client()
@@ -196,4 +192,4 @@ class ArgoRolloutsOperatorCharm(CharmBase):
 
 
 if __name__ == "__main__":
-    main(ArgoRolloutsOperatorCharm)
+    ops.main(ArgoRolloutsCharm)

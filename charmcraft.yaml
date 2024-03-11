@@ -1,5 +1,16 @@
 type: charm
 
+name: argo-rollouts
+ 
+summary: Charm to operate Argo Rollouts.
+
+description: |
+  Argo Rollouts is a Kubernetes controller and set of CRDs which provide advanced deployment capabilities such as:
+  Blue-green, canary, canary analysis, experimentation, and progressive delivery features to Kubernetes.
+
+  Argo Rollouts (optionally) integrates with ingress controllers and service meshes, leveraging their traffic shaping abilities to gradually shift traffic to the new version during an update.
+  Additionally, Rollouts can query and interpret metrics from various providers to verify key KPIs and drive automated promotion or rollback during an update.
+
 bases:
   - build-on:
     - name: ubuntu
@@ -17,3 +28,37 @@ bases:
     - name: ubuntu
       channel: "22.04"
       architectures: [amd64]
+
+# environment constraint
+# assuming the latest major Juju version and a Kubernetes-type cloud
+# at the moment, the latest juju version is 3.4
+# juju 3.1 is used here because 3.4 can't bootstrap a contoller successfully on linux/arm64
+assumes:
+  - juju >= 3.1
+  - k8s-api
+
+provides:
+  metrics-endpoint:
+    interface: prometheus_scrape
+  grafana-dashboard:
+    interface: grafana_dashboard
+
+requires:
+  log-proxy:
+    interface: loki_push_api
+    limit: 1
+
+containers:
+  argo-rollouts:
+    resource: argo-rollouts-image
+
+# used to populate the Resources tab on Charmhub
+resources:
+  argo-rollouts-image:
+    type: oci-image
+    description: OCI image for Argo Rollouts
+    # The upstream-source field is ignored by Juju.
+    # It is included here as a reference so the integration testing suite knows which image to deploy during testing.
+    # This field is also used by the 'canonical/charming-actions' GitHub action for automated releasing.
+    # To deploy a local charm you need to explicitly define a --resource parameter with the same resource name and resource upstream source.
+    upstream-source: quay.io/argoproj/argo-rollouts:v1.6.6
