@@ -22,6 +22,7 @@ from charms.prometheus_k8s.v0.prometheus_scrape import MetricsEndpointProvider
 
 logger = logging.getLogger(__name__)
 
+METRICS_PORT = 8090
 
 class ArgoRolloutsCharm(ops.CharmBase):
     """Charmed Operator for Argo Rollouts."""
@@ -43,7 +44,7 @@ class ArgoRolloutsCharm(ops.CharmBase):
         self._prometheus_scraping = MetricsEndpointProvider(
             self,
             relation_name="metrics-endpoint",
-            jobs=[{"static_configs": [{"targets": ["*:8090"]}]}],
+            jobs=[{"static_configs": [{"targets": [f"*:{METRICS_PORT}"]}]}],
             refresh_event=self.on.config_changed,
         )
         self._grafana_dashboards = GrafanaDashboardProvider(
@@ -177,18 +178,16 @@ class ArgoRolloutsCharm(ops.CharmBase):
             'argo_rollouts_controller_info{version="(v[0-9]+[.][0-9]+[.][0-9]+[+0-9a-f]*)"'
         )
         timeout = 10
-        argo_rollouts_metrics_port = 8090
 
         raw_metrics_text = requests.get(
-            f"http://localhost:{argo_rollouts_metrics_port}/metrics", timeout=timeout
+            f"http://localhost:{METRICS_PORT}/metrics", timeout=timeout
         ).text
 
         m = version_pattern.search(raw_metrics_text)
         return m.groups()[0]
 
     def _handle_ports(self):
-        metrics_port = 8090
-        self.unit.set_ports(metrics_port)
+        self.unit.set_ports(METRICS_PORT)
 
 
 if __name__ == "__main__":

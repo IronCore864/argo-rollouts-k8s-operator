@@ -35,10 +35,7 @@ async def test_build_and_deploy(ops_test: OpsTest):
     Assert on the unit status before any relations/configurations take place.
     """
     # detect CPU architecture
-    m = platform.machine()
-    arch = "amd64"
-    if m in ("aarch64", "arm64"):
-        arch = "arm64"
+    arch = "arm64" if platform.machine() in ("aarch64", "arm64") else "amd64"
 
     # build and deploy charm from local source folder
     logger.info("Building charm...")
