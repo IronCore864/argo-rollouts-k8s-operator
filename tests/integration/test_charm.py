@@ -3,23 +3,23 @@
 # See LICENSE file for licensing details.
 import asyncio
 import logging
-from pathlib import Path
 import platform
+from pathlib import Path
 
+import pytest
+import requests
+import yaml
 from lightkube import Client
+from lightkube.resources.apiextensions_v1 import CustomResourceDefinition
 from lightkube.resources.core_v1 import ConfigMap, Secret, Service, ServiceAccount
 from lightkube.resources.rbac_authorization_v1 import (
     ClusterRole,
     ClusterRoleBinding,
 )
-from lightkube.resources.apiextensions_v1 import CustomResourceDefinition
-import pytest
 from pytest_operator.plugin import OpsTest
-import requests
 from tenacity import retry
 from tenacity.stop import stop_after_attempt
 from tenacity.wait import wait_exponential as wexp
-import yaml
 
 logger = logging.getLogger(__name__)
 

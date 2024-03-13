@@ -7,19 +7,18 @@
 Upstream doc: https://argoproj.github.io/argo-rollouts/
 """
 
-from glob import glob
 import logging
 import re
-import requests
 import time
+from glob import glob
 
-from lightkube import Client, codecs
-from lightkube.core.exceptions import ApiError
 import ops
-
+import requests
 from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
 from charms.loki_k8s.v0.loki_push_api import LogProxyConsumer
 from charms.prometheus_k8s.v0.prometheus_scrape import MetricsEndpointProvider
+from lightkube import Client, codecs
+from lightkube.core.exceptions import ApiError
 
 logger = logging.getLogger(__name__)
 
@@ -38,9 +37,9 @@ class ArgoRolloutsCharm(ops.CharmBase):
         self.container = self.unit.get_container("argo-rollouts")
         self._context = {"namespace": self._namespace, "app_name": self.app.name}
 
-        framework.observe(self.on.argo_rollouts_pebble_ready, self._install_and_restarty)
-        framework.observe(self.on.install, self._install_and_restarty)
-        framework.observe(self.on.upgrade_charm, self._install_and_restarty)
+        framework.observe(self.on.argo_rollouts_pebble_ready, self._install_and_restart)
+        framework.observe(self.on.install, self._install_and_restart)
+        framework.observe(self.on.upgrade_charm, self._install_and_restart)
         framework.observe(self.on.remove, self._on_remove)
 
         self._prometheus_scraping = MetricsEndpointProvider(
@@ -73,7 +72,7 @@ class ArgoRolloutsCharm(ops.CharmBase):
                         raise
         return True
 
-    def _install_and_restarty(self, event: ops.PebbleReadyEvent) -> None:
+    def _install_and_restart(self, event: ops.PebbleReadyEvent) -> None:
         self.unit.status = ops.MaintenanceStatus("creating kubernetes resources")
         try:
             self._create_kubernetes_resources()
@@ -176,7 +175,7 @@ class ArgoRolloutsCharm(ops.CharmBase):
             return version
         except ops.pebble.ConnectionError:
             logger.warning("pebble not ready")
-        except Exception as e:
+        except Exception:
             logger.warning("unable to get version from API: ", exc_info=True)
         return ""
 

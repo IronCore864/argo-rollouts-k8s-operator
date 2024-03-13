@@ -3,17 +3,16 @@
 #
 # Learn more about testing at: https://juju.is/docs/sdk/testing
 
-from glob import glob
 import unittest
+from glob import glob
 from unittest.mock import MagicMock, Mock, mock_open, patch
 
+import ops
+import ops.testing
+from charm import ArgoRolloutsCharm
 from lightkube import codecs
 from lightkube.core.exceptions import ApiError
-import ops
 from ops.model import ActiveStatus, BlockedStatus, WaitingStatus
-import ops.testing
-
-from charm import ArgoRolloutsCharm
 
 
 class _FakeResponse:
