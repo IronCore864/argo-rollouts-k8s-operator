@@ -10,6 +10,7 @@ Upstream doc: https://argoproj.github.io/argo-rollouts/
 import logging
 import re
 import time
+import typing
 from glob import glob
 
 import ops
@@ -119,7 +120,7 @@ class ArgoRolloutsCharm(ops.CharmBase):
             return ops.WaitingStatus("Waiting for Pebble in workload container")
 
     @property
-    def _pebble_layer(self) -> ops.pebble.LayerDict:
+    def _pebble_layer(self) -> ops.pebble.Layer:
         # https://github.com/argoproj/argo-rollouts/blob/master/Dockerfile#L98C1-L98C42
         # ENTRYPOINT [ "/bin/rollouts-controller" ]
         cmd = "/bin/rollouts-controller"
@@ -137,7 +138,7 @@ class ArgoRolloutsCharm(ops.CharmBase):
             },
         }
 
-        return ops.pebble.Layer(pebble_layer)
+        return ops.pebble.Layer(typing.cast(ops.pebble.LayerDict, pebble_layer))
 
     def _on_remove(self, event):
         self.unit.status = ops.MaintenanceStatus("deleting kubernetes resources")
@@ -152,7 +153,7 @@ class ArgoRolloutsCharm(ops.CharmBase):
             with open(manifest) as f:
                 for resource in codecs.load_all_yaml(f, context=self._context):
                     try:
-                        if not resource.metadata.namespace:
+                        if resource.metadata and not resource.metadata.namespace:
                             client.delete(resource.__class__, resource.metadata.name)
                         else:
                             client.delete(
@@ -190,7 +191,7 @@ class ArgoRolloutsCharm(ops.CharmBase):
         ).text
 
         m = version_pattern.search(raw_metrics_text)
-        return m.groups()[0]
+        return m.groups()[0] if m else "fetching version failed"
 
     def _handle_ports(self):
         self.unit.set_ports(METRICS_PORT)

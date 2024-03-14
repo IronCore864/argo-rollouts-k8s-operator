@@ -32,7 +32,7 @@ bases:
 # environment constraint
 # assuming the latest major Juju version and a Kubernetes-type cloud
 # at the moment, the latest juju version is 3.4
-# juju 3.1 is used here because 3.4 can't bootstrap a contoller successfully on linux/arm64
+# juju 3.1 is used here because 3.4 can't bootstrap a controller successfully on linux/arm64
 assumes:
   - juju >= 3.1
   - k8s-api
