@@ -41,6 +41,7 @@ class ArgoRolloutsCharm(ops.CharmBase):
         framework.observe(self.on.argo_rollouts_pebble_ready, self._install_and_restart)
         framework.observe(self.on.install, self._install_and_restart)
         framework.observe(self.on.upgrade_charm, self._install_and_restart)
+        framework.observe(self.on.stop, self._on_stop)
         framework.observe(self.on.remove, self._on_remove)
 
         self._prometheus_scraping = MetricsEndpointProvider(
@@ -73,7 +74,7 @@ class ArgoRolloutsCharm(ops.CharmBase):
                         raise
         return True
 
-    def _install_and_restart(self, event: ops.PebbleReadyEvent) -> None:
+    def _install_and_restart(self, event: ops.EventBase) -> None:
         self.unit.status = ops.MaintenanceStatus("creating kubernetes resources")
         try:
             self._create_kubernetes_resources()
@@ -140,8 +141,10 @@ class ArgoRolloutsCharm(ops.CharmBase):
 
         return ops.pebble.Layer(typing.cast(ops.pebble.LayerDict, pebble_layer))
 
-    def _on_remove(self, event):
+    def _on_stop(self, event):
         self.unit.status = ops.MaintenanceStatus("deleting kubernetes resources")
+
+    def _on_remove(self, event):
         try:
             self._delete_kubernetes_resources()
         except ApiError:
@@ -170,7 +173,6 @@ class ArgoRolloutsCharm(ops.CharmBase):
     def version(self) -> str:
         """Argo Rollouts controller's version."""
         try:
-            self.container.get_services(self.pebble_service_name)
             version = self._request_version()
             logger.info(f"application version: {version}")
             return version

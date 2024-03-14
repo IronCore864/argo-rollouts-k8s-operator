@@ -179,13 +179,12 @@ class TestCharm(unittest.TestCase):
 
 
 class TestCharmNamespaceProperty(unittest.TestCase):
-    def tearDown(self):
-        harness = ops.testing.Harness(ArgoRolloutsCharm)
-        harness.cleanup()
+    def setUp(self):
+        self.harness = ops.testing.Harness(ArgoRolloutsCharm)
+        self.addCleanup(self.harness.cleanup)
 
     @patch("builtins.open", new_callable=mock_open, read_data="test")
     def test_property_namespace(self, mock):
-        harness = ops.testing.Harness(ArgoRolloutsCharm)
-        harness.begin()
-        self.assertEqual(harness.charm._namespace, "test")
+        self.harness.begin()
+        self.assertEqual(self.harness.charm._namespace, "test")
         mock.assert_called_with("/var/run/secrets/kubernetes.io/serviceaccount/namespace", "r")
