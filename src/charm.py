@@ -18,7 +18,7 @@ import requests
 from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
 from charms.loki_k8s.v0.loki_push_api import LogProxyConsumer
 from charms.prometheus_k8s.v0.prometheus_scrape import MetricsEndpointProvider
-from lightkube import Client, codecs
+from lightkube import Client, codecs  # type: ignore
 from lightkube.core.exceptions import ApiError
 
 logger = logging.getLogger(__name__)
@@ -63,7 +63,8 @@ class ArgoRolloutsCharm(ops.CharmBase):
             return f.read().strip()
 
     def _create_kubernetes_resources(self) -> bool:
-        client = Client(field_manager="argo-rollouts-operator-manager")
+        # type: ignore
+        client = Client(field_manager="argo-rollouts-operator-manager")  # type: ignore
         for manifest in glob("src/templates/*.yaml.j2"):
             with open(manifest) as f:
                 for resource in codecs.load_all_yaml(f, context=self._context):
@@ -151,18 +152,18 @@ class ArgoRolloutsCharm(ops.CharmBase):
             logger.exception("kubernetes API error, resource deletion failed")
 
     def _delete_kubernetes_resources(self) -> bool:
-        client = Client()
+        client = Client()  # type: ignore
         for manifest in glob("src/templates/*.yaml.j2"):
             with open(manifest) as f:
                 for resource in codecs.load_all_yaml(f, context=self._context):
                     try:
                         if resource.metadata and not resource.metadata.namespace:
-                            client.delete(resource.__class__, resource.metadata.name)
+                            client.delete(resource.__class__, resource.metadata.name)  # type: ignore
                         else:
                             client.delete(
-                                resource.__class__,
-                                name=resource.metadata.name,
-                                namespace=resource.metadata.namespace,
+                                resource.__class__,  # type: ignore
+                                name=resource.metadata.name,  # type: ignore
+                                namespace=resource.metadata.namespace,  # type: ignore
                             )
                     except ApiError:
                         logger.debug("failed to delete resource: %s.", resource.to_dict())
@@ -200,4 +201,4 @@ class ArgoRolloutsCharm(ops.CharmBase):
 
 
 if __name__ == "__main__":
-    ops.main(ArgoRolloutsCharm)
+    ops.main(ArgoRolloutsCharm) # type: ignore
