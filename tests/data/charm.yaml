@@ -1,0 +1,10 @@
+description: Overlay for testing current charm
+bundle: kubernetes
+applications:
+  argo-rollouts:
+    charm: {{charm}}
+    resources: {{resources}}
+    trust: true
+    series: {{series}}
+    constraints: arch={{arch}}
+    scale: 1
